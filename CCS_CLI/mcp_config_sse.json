@@ -1,0 +1,7 @@
+{
+    "mcpServers": {
+        "ccs-unified-sse": {
+            "url": "http://localhost:3000/sse"
+        }
+    }
+}

@@ -1,0 +1,22 @@
+# Common
+.DS_Store
+node_modules
+dist
+.env
+.idea
+.vscode
+
+# CCS specific
+CCS_CLI/.env
+CCS_CLI/mcp_config*.json
+!CCS_CLI/mcp_config_sse.json
+**/*.log
+
+# User Content (Keep folders, ignore files)
+CCS_CLI/Characters/*
+!CCS_CLI/Characters/.gitkeep
+CCS_CLI/Worldbooks/*
+!CCS_CLI/Worldbooks/.gitkeep
+
+# User specific
+mcp_config.json

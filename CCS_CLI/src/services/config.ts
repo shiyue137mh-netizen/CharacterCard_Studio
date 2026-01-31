@@ -3,6 +3,7 @@
  * Loads sillytavern.config.yaml or falls back to defaults.
  */
 
+import chalk from 'chalk';
 import dotenv from 'dotenv';
 import yaml from 'js-yaml';
 import fs from 'node:fs';
@@ -101,8 +102,10 @@ export class ConfigLoader {
         const envPath = this.findFileUp('.env');
         if (envPath) {
             this.envPath = envPath;
+            console.error(chalk.dim(`[Config] Loading environment from: ${envPath}`));
             dotenv.config({ path: envPath });
         } else {
+            console.error(chalk.yellow(`[Config] No .env file found in parent directories.`));
             dotenv.config();
         }
 
@@ -113,12 +116,13 @@ export class ConfigLoader {
         const projectConfig = this.loadProject();
 
         // 4. Env Vars
+        const envInsecure = process.env.ST_INSECURE_SSL?.trim().toLowerCase();
         const envConfig = {
             apiUrl: process.env.ST_API_URL,
             apiKey: process.env.ST_API_KEY,
             username: process.env.ST_USERNAME,
             password: process.env.ST_PASSWORD,
-            insecure: process.env.ST_INSECURE_SSL === 'true' ? true : undefined,
+            insecure: (envInsecure === 'true' || envInsecure === '1') ? true : undefined,
         };
 
         // 5. Merge

@@ -33,20 +33,33 @@ export class PullService {
 
         // 2. Process Entries
         // 2. Process Entries
+        // 2. Process Entries
         const entryMap = worldInfo.entries;
         const entriesArray: WorldInfoEntry[] = [];
+        let rawEntries: any[] = [];
 
         if (Array.isArray(entryMap)) {
-            // Already an array
-            entriesArray.push(...entryMap);
+            rawEntries = entryMap;
         } else {
-            // It's a Record
-            for (const key in entryMap) {
-                const rawEntry = (entryMap as any)[key];
-                const validated = ValidationUtils.validate(WorldInfoEntrySchema, rawEntry as any, `Remote Entry ${key}`);
-                if (validated) {
-                    entriesArray.push(validated);
-                }
+            rawEntries = Object.values(entryMap);
+        }
+
+        for (let i = 0; i < rawEntries.length; i++) {
+            const rawEntry = rawEntries[i];
+            const entryLabel = `Remote Entry ${rawEntry.uid || i}`;
+
+            // Normalize keys (handle legacy V1 / embedded format)
+            if ((!rawEntry.key || rawEntry.key.length === 0) && rawEntry.keys) {
+                rawEntry.key = rawEntry.keys;
+            }
+
+            if ((!rawEntry.keysecondary || rawEntry.keysecondary.length === 0) && rawEntry.secondary_keys) {
+                rawEntry.keysecondary = rawEntry.secondary_keys;
+            }
+
+            const validated = ValidationUtils.validate(WorldInfoEntrySchema, rawEntry as any, entryLabel);
+            if (validated) {
+                entriesArray.push(validated);
             }
         }
 
@@ -199,6 +212,7 @@ export class PullService {
      */
     static async pullCharacter(charName: string, targetDir: string = process.cwd()) {
         UI.startSpinner(`Pulling Character "${charName}"...`);
+        // console.log(`Pulling Character "${charName}"...`);
 
         // 1. Fetch Character Data
         const rawCharData = await CharacterReader.getByName(charName);

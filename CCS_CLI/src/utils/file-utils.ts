@@ -21,14 +21,22 @@ export class FileUtils {
         // 2. Recursive Search
         const search = (dir: string): string | null => {
             const files = fs.readdirSync(dir, { withFileTypes: true });
+            const normalizedIdNFC = entryId.normalize('NFC');
+            const normalizedIdNFD = entryId.normalize('NFD');
 
             for (const file of files) {
                 if (file.isDirectory()) {
                     const found = search(path.join(dir, file.name));
                     if (found) return found;
                 } else if (file.isFile()) {
-                    if (file.name === `${entryId}.yaml` || file.name === `${entryId}.yml`) {
-                        return path.join(dir, file.name);
+                    const baseName = path.parse(file.name).name;
+                    const normalizedBaseNFC = baseName.normalize('NFC');
+                    const normalizedBaseNFD = baseName.normalize('NFD');
+
+                    if (normalizedBaseNFC === normalizedIdNFC || normalizedBaseNFD === normalizedIdNFD) {
+                        if (file.name.endsWith('.yaml') || file.name.endsWith('.yml')) {
+                            return path.join(dir, file.name);
+                        }
                     }
                 }
             }

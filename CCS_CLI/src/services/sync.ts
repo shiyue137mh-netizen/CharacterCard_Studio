@@ -68,13 +68,10 @@ export class SyncService {
             for (let i = 0; i < index.entries.length; i++) {
                 const indexEntry = index.entries[i];
                 if (!indexEntry.id) {
-                    // Skip entries without ID (malformed)
                     continue;
                 }
 
-                // Find content file recursively
                 const entryPath = FileUtils.findEntryFile(entriesDir, indexEntry.id);
-
                 let contentData: ContentFile = { key: [], keysecondary: [], content: "" };
 
                 if (entryPath) {
@@ -83,17 +80,14 @@ export class SyncService {
                         contentData = YamlParser.parseContent(yamlContent);
                     } catch (e) {
                         console.warn(chalk.yellow(`Warning: Failed to parse content file for ${indexEntry.id}`));
-                        continue; // Skip broken content
+                        continue;
                     }
                 } else {
-                    // If file is missing, we treat this as "Intentional Deletion" by the user
-                    // We skip it so the remote update (which overwrites) will remove it
                     console.log(chalk.red(`   🗑️  Entry file missing for "${indexEntry.id}", will be removed from remote.`));
                     continue;
                 }
 
-                const id = i; // Use index as ID for order stability in ST
-
+                const id = i;
                 const fullEntry: WorldInfoEntry = {
                     uid: id,
 
@@ -108,33 +102,32 @@ export class SyncService {
                     constant: indexEntry.constant || false,
                     selective: indexEntry.selective !== false,
                     order: indexEntry.order ?? 100,
-                    position: typeof indexEntry.position === 'number' ? indexEntry.position : 0, // Resolve string alias later if needed
+                    position: typeof indexEntry.position === 'number' ? indexEntry.position : 0,
                     depth: indexEntry.depth ?? 4,
                     probability: indexEntry.probability ?? 100,
                     group: indexEntry.group || '',
-                    role: indexEntry.role || null,
+                    role: indexEntry.role || 0,
 
-                    // Defaults for others
+                    // Original ST fields
                     selectiveLogic: 0,
                     excludeRecursion: indexEntry.excludeRecursion || false,
                     preventRecursion: indexEntry.preventRecursion || false,
-                    delayUntilRecursion: indexEntry.delayUntilRecursion || false,
+                    delayUntilRecursion: !!indexEntry.delayUntilRecursion,
                     useProbability: true,
-                    scanDepth: null,
-                    caseSensitive: indexEntry.caseSensitive || null,
-                    matchWholeWords: indexEntry.matchWholeWords || null,
-                    useGroupScoring: indexEntry.useGroupScoring || null,
+                    scanDepth: indexEntry.scanDepth ?? null,
+                    caseSensitive: indexEntry.caseSensitive ?? null,
+                    matchWholeWords: indexEntry.matchWholeWords ?? null,
+                    useGroupScoring: indexEntry.useGroupScoring ?? false,
                     automationId: indexEntry.automationId || "",
-                    sticky: indexEntry.sticky || null,
-                    cooldown: indexEntry.cooldown || null,
-                    delay: indexEntry.delay || null,
-                    groupOverride: false,
-                    groupWeight: 100,
+                    sticky: indexEntry.sticky ?? null,
+                    cooldown: indexEntry.cooldown ?? null,
+                    delay: indexEntry.delay ?? null,
+                    groupOverride: indexEntry.groupOverride || false,
+                    groupWeight: indexEntry.groupWeight ?? 100,
                 };
 
                 const validated = ValidationUtils.validate(WorldInfoEntrySchema, fullEntry, `Entry ${indexEntry.id}`) as WorldInfoEntry | null;
                 if (validated) {
-                    // We know local loading builds a Record
                     (worldInfo.entries as Record<string, WorldInfoEntry>)[String(id)] = validated;
                 }
             }
@@ -148,33 +141,29 @@ export class SyncService {
     static async pushCharacter(charName: string, projectPath: string) {
         UI.startSpinner(`Pushing Character "${charName}"...`);
 
-        // 1. Resolve Target Filename via API
         const remoteChar = await import('../api/api-wrappers').then(m => m.CharacterReader.getByName(charName));
-
-        // If not found, we can't edit.
         if (!remoteChar) {
             throw new Error(`Character "${charName}" not found on server. Cannot update.`);
         }
         const avatarUrl = remoteChar.avatar;
+        // Capture preservation fields
+        const chat = remoteChar.chat;
+        const create_date = remoteChar.create_date;
 
-        // 2. Read Local Metadata
         const charYamlPath = path.join(projectPath, 'character.yaml');
         if (!fs.existsSync(charYamlPath)) {
             throw new Error("Missing character.yaml");
         }
         const metadata = yaml.load(fs.readFileSync(charYamlPath, 'utf-8')) as any;
 
-        // 3. Read Markdown Content
         if (fs.existsSync(path.join(projectPath, 'first_message.md'))) {
             metadata.first_mes = fs.readFileSync(path.join(projectPath, 'first_message.md'), 'utf-8');
         }
 
-        // 3.1 Read Alternate Greetings
-        // Look for first_message_*.md (e.g. first_message_02.md)
         const projectFiles = fs.readdirSync(projectPath);
         const altGreetingFiles = projectFiles
             .filter(f => f.startsWith('first_message_') && f.endsWith('.md') && f !== 'first_message.md')
-            .sort(); // Natural sort should work for _02, _03
+            .sort();
 
         if (altGreetingFiles.length > 0) {
             const alternate_greetings: string[] = [];
@@ -192,67 +181,75 @@ export class SyncService {
             metadata.scenario = fs.readFileSync(path.join(projectPath, 'scenario.md'), 'utf-8');
         }
 
-        // 4. Handle Embedded Worldbooks
+        let worldName = '';
         const linkedWbDir = path.join(projectPath, 'linked_worldbooks');
         if (fs.existsSync(linkedWbDir)) {
-            const books = fs.readdirSync(linkedWbDir);
+            const books = fs.readdirSync(linkedWbDir).filter(f => !f.startsWith('.'));
             if (books.length > 0) {
-                const wbName = books[0];
-                const wbPath = path.join(linkedWbDir, wbName);
-                const wbData = this.loadWorldBookFromLocal(wbPath);
-
-                // Assign to V2 structure
+                const primaryWbName = books[0];
+                worldName = primaryWbName;
                 if (!metadata.data) metadata.data = {};
-                metadata.data.character_book = {
-                    name: wbName,
-                    entries: wbData.entries
-                };
-                UI.startSpinner(`Embedding Worldbook "${wbName}" into character card...`);
+                if (!metadata.data.extensions) (metadata.data as any).extensions = {};
+                (metadata.data.extensions as any).world = primaryWbName;
+                metadata.data.character_book = undefined;
+
+                for (const wbName of books) {
+                    const wbPath = path.join(linkedWbDir, wbName);
+                    UI.startSpinner(`Syncing global worldbook "${wbName}"...`);
+                    await this.pushWorldBook(wbPath, wbName);
+                }
             }
         }
 
-        // Validate Character Metadata
         const validatedChar = ValidationUtils.validate(CharacterSchema, metadata, `Character ${charName}`);
         if (!validatedChar) {
             throw new Error(`Invalid Character data for "${charName}". Check the logs above.`);
         }
 
-        // 5. Send Update
+        // Construct extensions object for the API (bypassing world embedding logic)
+        const extensionsPayload = worldName ? JSON.stringify({ world: worldName }) : undefined;
+
         await TavernAPI.fetch('/api/characters/edit', {
             method: 'POST',
             body: JSON.stringify({
                 avatar_url: avatarUrl,
                 ch_name: metadata.name,
-                // Pass full object to allow extensions/wb update
+                description: metadata.description || '',
+                personality: metadata.personality || '',
+                scenario: metadata.scenario || '',
+                first_mes: metadata.first_mes || '',
+                mes_example: metadata.mes_example || '',
+                // Preservation fields
+                chat: chat,
+                create_date: create_date,
+                // Pass extensions explicitly to trigger deepMerge and restore the link
+                extensions: extensionsPayload,
                 json_data: JSON.stringify(metadata)
             })
         });
-
         UI.succeedSpinner(`Successfully pushed Character "${charName}"!`);
     }
 
     /**
      * Push local Worldbook to SillyTavern
      */
-    static async pushWorldBook(projectPath: string, projectDirName: string) {
+    static async pushWorldBook(projectPath: string, bookName?: string) {
+        const finalName = bookName || path.basename(projectPath);
         const indexPath = path.join(projectPath, 'index.yaml');
         if (!fs.existsSync(indexPath)) throw new Error("Missing index.yaml");
 
-        // Use shared loader
         const wbData = this.loadWorldBookFromLocal(projectPath);
 
-        // Validate
-        const validatedWb = ValidationUtils.validate(WorldInfoSchema, wbData, `WorldBook ${projectDirName}`);
+        const validatedWb = ValidationUtils.validate(WorldInfoSchema, wbData, `WorldBook ${finalName}`);
         if (!validatedWb) {
-            throw new Error(`Invalid WorldBook data for "${projectDirName}". Check logs above.`);
+            throw new Error(`Invalid WorldBook data for "${finalName}". Check logs above.`);
         }
 
-        // Push
-        UI.startSpinner(`Pushing WorldBook "${projectDirName}"...`);
+        UI.startSpinner(`Pushing WorldBook "${finalName}"...`);
         await TavernAPI.fetch('/api/worldinfo/edit', {
             method: 'POST',
             body: JSON.stringify({
-                name: projectDirName,
+                name: finalName,
                 data: wbData
             })
         });
@@ -265,7 +262,6 @@ export class SyncService {
     static async push(projectPath: string = process.cwd()) {
         const projectDirName = path.basename(projectPath);
 
-        // Auto-detect type
         if (fs.existsSync(path.join(projectPath, 'character.yaml'))) {
             await this.pushCharacter(projectDirName, projectPath);
         } else if (fs.existsSync(path.join(projectPath, 'index.yaml'))) {

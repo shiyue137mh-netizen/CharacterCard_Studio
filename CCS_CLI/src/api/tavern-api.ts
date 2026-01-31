@@ -5,6 +5,7 @@
 
 import type { AxiosInstance } from "axios";
 import axios from "axios";
+import chalk from "chalk";
 import https from "node:https";
 import { ConfigLoader } from "../services/config";
 
@@ -18,6 +19,9 @@ export class TavernAPI {
         const baseURL = config.apiUrl;
 
         // Create Axios Instance
+        const insecure = config.insecure === true;
+        console.error(chalk.dim(`[TavernAPI] SSL Verification: ${insecure ? chalk.yellow('Disabled (Insecure)') : chalk.green('Enabled')}`));
+
         this.client = axios.create({
             baseURL,
             headers: {
@@ -26,7 +30,7 @@ export class TavernAPI {
             },
             // Security: Only ignore self-signed certs if explicitly configured
             httpsAgent: new https.Agent({
-                rejectUnauthorized: !(config.insecure === true),
+                rejectUnauthorized: !insecure,
             }),
             validateStatus: () => true,
         });

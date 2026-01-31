@@ -5,7 +5,9 @@ import { z } from 'zod';
 export const WorldInfoEntrySchema = z.object({
     uid: z.number().optional().default(0), // UID might be missing in older V1 arrays
     key: z.array(z.string()).default([]),
+    keys: z.array(z.string()).optional(), // Legacy / API field (plural)
     keysecondary: z.array(z.string()).default([]),
+    secondary_keys: z.array(z.string()).optional(), // Legacy / API field
     comment: z.string().optional(),
     content: z.string().default(''),
     constant: z.boolean().default(false),
@@ -14,8 +16,8 @@ export const WorldInfoEntrySchema = z.object({
     order: z.number().int().default(100),
     position: z.union([z.number().int(), z.string()]).default(0), // 0=before, 1=after (can be string)
     disable: z.boolean().default(false),
-    excludeRecursion: z.boolean().default(false),
-    preventRecursion: z.boolean().default(false),
+    excludeRecursion: z.boolean().default(true),
+    preventRecursion: z.boolean().default(true),
     delayUntilRecursion: z.boolean().default(false),
     probability: z.number().min(0).max(100).default(100),
     useProbability: z.boolean().default(true),
@@ -32,9 +34,6 @@ export const WorldInfoEntrySchema = z.object({
     sticky: z.number().nullable().default(null),
     cooldown: z.number().nullable().default(null),
     delay: z.number().nullable().default(null),
-
-    // Extensions
-    displayIndex: z.number().int().optional(),
 });
 
 export const WorldInfoSchema = z.object({
@@ -81,6 +80,8 @@ export const IndexEntrySchema = z.object({
     caseSensitive: z.boolean().nullable().optional(),
     useGroupScoring: z.boolean().nullable().optional(),
     automationId: z.string().optional(),
+    scanDepth: z.number().nullable().optional(),
+    groupOverride: z.boolean().optional(),
 });
 
 // 3. Index File (index.yaml)
